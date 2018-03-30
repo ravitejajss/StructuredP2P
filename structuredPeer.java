@@ -31,7 +31,9 @@ public class structuredPeer {
 	private static List<String> nodeResources = Collections.synchronizedList(new ArrayList<String>());
 	private static FingerTable fingerTable;
 	private static ConcurrentHashMap<Integer, Integer> keyTable = new ConcurrentHashMap<Integer,Integer>();
+	                              // fileKey  nodeKey
 	private static ConcurrentHashMap<Integer, String> allFileDetails = new ConcurrentHashMap<Integer,String>();
+	                              // fileKey  fileName
 	private static int myKey;
 	private static int totalNodeCount = 20;
 	private static final int m = 15;
@@ -84,19 +86,20 @@ public class structuredPeer {
 			fingerTable = new FingerTable(myKey, myIP, myPort, m, totalNodeCount);
 			System.out.println("Fingertable initiated"); //test print
 			
+			peerListen lis = new peerListen(myPort, myIP, keyTable, fingerTable, uname);
+			lis.start();
+			System.out.println("listen thread will start here"); //test print
+			
 			int noOfResources = 5;
 			LoadResources(noOfResources);
 			System.out.println("loaded resources"); //test print
 			resgisterNode();
 			
-			peerListen lis = new peerListen(myPort, myIP, keyTable, fingerTable);
-			lis.start();
-			System.out.println("listen thread started"); //test print
-			
 			AddResourcesToNetwork();
 			System.out.println("Added resources to n/w"); //test print
 			GetKeysFromSuccessor();
-			System.out.println("Got keys from succ. you can give commands now"); //test print
+			System.out.println("Got keys from succ."); //test print
+			System.out.println("you can give commands now"); //test print
 			
 			while(true) { 
 				String s = sc.nextLine();                                        // Accepting the User Entry Commands.
@@ -107,14 +110,15 @@ public class structuredPeer {
 					break;
 					
 				case "fingertable":
-					fingerTable.Print();
+					fingerTable.PrintStats();
 					break;
 					
 				case "keytable":
-					System.out.println("\nFile Node");
+					System.out.println("\nFile    Node");
 					for (int i : keyTable.keySet()) {
-						System.out.println(String.format("%04d", i) +"   "+ String.format("%04d", keyTable.get(i)));
+						System.out.println(String.format("%05d", i) +"   "+ String.format("%05d", keyTable.get(i)));
 					}
+					System.out.println("\n"+nodeResources);
 					break;
 					
 				case "entries":
@@ -182,6 +186,9 @@ public class structuredPeer {
 	}
 	
 	private static void GetKeysFromSuccessor() throws IOException, NoSuchAlgorithmException {
+		succKey = fingerTable.GetSuccessor(myKey);
+		succIp = fingerTable.GetIp(succKey);
+		succPort = fingerTable.GetPort(succKey);
 		String msg = "GETKY "+ myKey;
 		msg = String.format("%04d", msg.length()) +" "+ msg;
 		String crudeReply = sendrec(msg, succIp, succPort);
@@ -198,15 +205,18 @@ public class structuredPeer {
 	}
 
 	public static String sendrec(String Message, String ip, int Port) throws IOException{
+		System.out.println();
 		logger.log(Level.INFO, "Trying to send the message to Socket address: " + ip + " " + Port);
-		Socket sock = new Socket(ip, Port);
+		System.out.println("Trying to send the message to Socket address: " + ip + " " + Port);
+		sock = new Socket(ip, Port);
 		DataOutputStream out = new DataOutputStream(sock.getOutputStream());
 		DataInputStream in = new DataInputStream(sock.getInputStream());
+		System.out.println("main.sendrec sending: "+Message);
 		out.write(Message.getBytes("UTF-8"));
 	    byte[] rcvdBytes = new byte[10000];
 	    in.read(rcvdBytes);
 	    String recv = new String(rcvdBytes,0,rcvdBytes.length,"UTF-8").replaceAll("\\p{C}", "");
-	    System.out.println(recv);
+	    System.out.println("main.sendrec received: "+recv);
 	    sock.close();
 		logger.log(Level.INFO, "Received the message from Socket address: " + ip + " " + Port);
 		return recv;
@@ -230,7 +240,7 @@ public class structuredPeer {
 		int noOfRcvdNodes = Integer.parseInt(replyExploded[3]);
 
 		if (replyExploded[1].equals("REGOK") & replyExploded[2].equals("struct")) {
-			if(noOfRcvdNodes>=0 & noOfRcvdNodes<=20) {
+			if(noOfRcvdNodes>=0 & noOfRcvdNodes<=80) {
 				System.out.println("Node registered successfully with bootstrap");
 				for(int i = 4; i<replyExploded.length; i+=2) {
 					String ip = replyExploded[i];
@@ -244,7 +254,7 @@ public class structuredPeer {
 			}
 			else if (noOfRcvdNodes==9998) {
 				System.out.println("Node already registered. Unregistering first");
-				deleteNode();
+				deleteNodeBootstrap();
 				resgisterNode();
 				return 0;
 			}
@@ -256,21 +266,7 @@ public class structuredPeer {
 			return 1;		
 	}
 
-	public static void deleteNode() throws IOException {
-		//Giving keys to successor
-		String keyMsg = Integer.toString(keyTable.keySet().size());
-		for(int i : keyTable.keySet()) {
-			int fileKey = i;
-			int nodeKey = keyTable.get(i);
-			int nodePort = fingerTable.GetPort(nodeKey);
-			String file = allFileDetails.get(fileKey);
-			String nodeIp = fingerTable.GetIp(nodeKey);
-			keyMsg +=  " "+ nodeIp +" "+ Integer.toString(nodePort) +" "+ Integer.toString(fileKey) +" "+ file;
-		}
-		keyMsg = "GIVEKY " + keyMsg;
-		keyMsg = String.format("%04d", keyMsg.length()) +" "+ keyMsg;
-		sendrec(keyMsg, succIp, succPort);
-		
+	public static void deleteNode() throws IOException {		
 		//Unregistering from bootstrap and network
 		String msg = "DEL IPADDRESS "+ myIP +" "+ myPort +" "+ uname;
 		msg = String.format("%04d", msg.length()) +" "+ msg;
@@ -282,7 +278,32 @@ public class structuredPeer {
 		for (int i = 6;i<ipList.length;i+=2) {
 			sendrec(msg, ipList[i], Integer.parseInt(ipList[i+1]));
 		}
+
+		//Giving keys to successor
+		succKey = fingerTable.GetSuccessor(myKey);
+		succIp = fingerTable.GetIp(succKey);
+		succPort = fingerTable.GetPort(succKey);
+		String keyMsg = Integer.toString(keyTable.keySet().size());
+		for(int i : keyTable.keySet()) {
+			int fileKey = i;
+			int nodeKey = keyTable.get(i);
+			int nodePort = fingerTable.GetPort(nodeKey);
+			String file = allFileDetails.get(fileKey);
+			String nodeIp = fingerTable.GetIp(nodeKey);
+			keyMsg +=  " "+ nodeIp +" "+ Integer.toString(nodePort) +" "+ Integer.toString(fileKey) +" "+ file;
+		}
+		keyMsg = "GIVEKY " + keyMsg;
+		keyMsg = String.format("%04d", keyMsg.length()) +" "+ keyMsg;
+		if(succKey!=myKey)
+			sendrec(keyMsg, succIp, succPort);
 		exit(0);
+	}
+	
+	public static void deleteNodeBootstrap() throws IOException {
+		String msg = "DEL IPADDRESS "+ myIP +" "+ myPort +" "+ uname;
+		msg = String.format("%04d", msg.length()) +" "+ msg;
+		sendrec(msg, BS_ip, BS_port);
+		System.out.println("Node Deleted Successfully from bootstrap");
 	}
 
 	public static void AddResourcesToNetwork() throws NoSuchAlgorithmException, IOException{
@@ -340,16 +361,14 @@ public class structuredPeer {
 			}
 		}
 		
-		System.out.println(allFileDetails.size());
-		
 		int i = 0;
 		while(i<noOfResources) {
 			int rand = (int) (Math.random()*allFileDetails.size());
-			if(nodeResources.contains(allFileDetails.get(rand))) {
+			if(nodeResources.contains(resources.get(rand))) {
 				continue;
 			}
 			else {
-				nodeResources.add(allFileDetails.get(rand));
+				nodeResources.add(resources.get(rand));
 				i++;
 			}
 		}

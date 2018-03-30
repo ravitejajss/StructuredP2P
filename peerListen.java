@@ -21,12 +21,14 @@ public class peerListen extends Thread{
 	private Logger logger = Logger.getLogger("ListenLog");		// Declaring the global variables.
 	private FileHandler log_file;
 	private Socket sock;
+	private String uname;
 	
-	peerListen(int myPort, String myIP, ConcurrentHashMap<Integer, Integer> keyTable, FingerTable fingerTable) throws NoSuchAlgorithmException {
+	peerListen(int myPort, String myIP, ConcurrentHashMap<Integer, Integer> keyTable, FingerTable fingerTable, String uname) throws NoSuchAlgorithmException {
 		this.myPort = myPort;
 		this.myIP = myIP;
 		this.keyTable = keyTable;
 		this.fingerTable = fingerTable;
+		this.uname = uname;
 		myKey = structuredPeer.hash(this.myIP+":"+Integer.toString(myPort));
 	}
 	
@@ -50,6 +52,7 @@ public class peerListen extends Thread{
 		
 		while(true) {
 			try {
+				System.out.println("waiting for connection");
 				sock = Sock.accept();
 				String[] rcvd = rcv();
 				String[] rcvMsg = rcvd[0].split(" ");
@@ -61,9 +64,11 @@ public class peerListen extends Thread{
 				
 				switch (rcvMsg[1]) {
 				case "REG":
-					fingerTable.AddEntry(nodeKey, ip, port);
-					sendMsg = "0005 REGOK";
-					SendBack(sendMsg);
+					if(rcvMsg[4].equals(uname)) {
+						fingerTable.AddEntry(nodeKey, rcvMsg[2], Integer.parseInt(rcvMsg[3]));
+						sendMsg = "0005 REGOK";
+						SendBack(sendMsg);
+					}
 					break;
 					
 				case "DEL":
@@ -73,24 +78,47 @@ public class peerListen extends Thread{
 					break;
 					
 				case "ADD":
+				{
 					int fileKey = Integer.parseInt(rcvMsg[4]);
-					String file = rcvMsg[5];
+					String file = "";
+					for (int i = 5;i<rcvMsg.length;i++) {
+						file += rcvMsg[i] + " ";
+					}
+					file = file.substring(0, file.length()-1);
+					System.out.println(file+"|");
 					if(fileKey==structuredPeer.hash(file)) {
-						if(fingerTable.FindKey(fingerTable.GetPredecessor())<fileKey&fileKey<=myKey)
+						System.out.println(fingerTable.GetPredecessor(myKey)+"|"+fileKey+"|"+myKey);
+						if(fingerTable.GetPredecessor(myKey)<fileKey&fileKey<=myKey||fingerTable.GetPredecessor(myKey)==myKey) {
+							System.out.println(fileKey+"|"+nodeKey);
 							keyTable.put(fileKey, nodeKey);
-						else if(fileKey>myKey) {
-							int respKey = fingerTable.FindKey(fileKey);
-							Send(rcvd[0],fingerTable.GetIp(respKey),fingerTable.GetPort(respKey));
 						}
+						else if(fileKey>myKey) {
+							int respKey = fingerTable.FindNextKey(fileKey);
+							System.out.println(respKey+"|"+myKey);
+							if(respKey!=myKey)
+								Send(rcvd[0],fingerTable.GetIp(respKey),fingerTable.GetPort(respKey));
+						}
+						sendMsg = "0007 ADDOK 0";
+						SendBack(sendMsg);
+					}
+					else {
+						System.out.println("Error in listen thread: Got corrupted fileKey in ADD");
+						sendMsg = "0007 ADDOK 9998";
+						SendBack(sendMsg);
+					}
+					System.out.println("\nFile    Node - listen thread");
+					for (int i : keyTable.keySet()) {
+						System.out.println(String.format("%05d", i) +"   "+ String.format("%05d", keyTable.get(i)));
 					}
 					break;
+				}
 					
 				case "UPFIN":
 					
 					break;
 					
 				case "GETKY":
-	
+						
 					break;
 					
 				case "GIVEKY":
@@ -116,7 +144,9 @@ public class peerListen extends Thread{
 	private void Send(String msg, String ip, int port) throws IOException {
 		Socket socket = new Socket(ip,port);
 		DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+		System.out.println("listen.send sending: "+msg);
 		out.write(msg.getBytes("UTF-8"));
+		System.out.println("sent");
 		socket.close();
 	}
 
@@ -125,13 +155,15 @@ public class peerListen extends Thread{
 		byte[] rcvdBytes = new byte[10000];
 	    in.read(rcvdBytes);
 	    String recv = new String(rcvdBytes,0,rcvdBytes.length,"UTF-8").replaceAll("\\p{C}", "");
-	    System.out.println(recv);
+	    System.out.println("listen.rcv received: "+recv);
 	    String[] rcvd = {recv, sock.getInetAddress().getHostAddress(), Integer.toString(sock.getPort())};
 		return rcvd;
 	}
 	
 	private void SendBack(String Message) throws IOException {
 		DataOutputStream out = new DataOutputStream(sock.getOutputStream());
+		System.out.println("listen.sendBack sending: "+Message);
 		out.write(Message.getBytes("UTF-8"));
+		System.out.println("sent");
 	}
 }
