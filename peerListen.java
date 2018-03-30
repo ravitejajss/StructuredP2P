@@ -65,7 +65,7 @@ public class peerListen extends Thread{
 				switch (rcvMsg[1]) {
 				case "REG":
 					if(rcvMsg[4].equals(uname)) {
-						fingerTable.AddEntry(nodeKey, rcvMsg[2], Integer.parseInt(rcvMsg[3]));
+						fingerTable.AddEntry(structuredPeer.hash(rcvMsg[2]+":"+rcvMsg[3]), rcvMsg[2], Integer.parseInt(rcvMsg[3]));
 						sendMsg = "0005 REGOK";
 						SendBack(sendMsg);
 					}
