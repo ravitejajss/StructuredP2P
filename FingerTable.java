@@ -22,9 +22,9 @@ public class FingerTable {
 	private int keyLimit;
 	//private int totalNodeCount;
 	private ConcurrentHashMap<Integer, Integer> fingerMap = new ConcurrentHashMap<Integer, Integer>();
-	private ConcurrentHashMap<Integer, ArrayList<String>> allNodeDetails = new ConcurrentHashMap<Integer, ArrayList<String>>();
 	private List<Integer> startKeys = Collections.synchronizedList(new ArrayList<Integer>());
 	private List<Integer> allKeysInOrder = Collections.synchronizedList(new ArrayList<Integer>());
+	private ConcurrentHashMap<Integer, ArrayList<String>> allNodeDetails = new ConcurrentHashMap<Integer, ArrayList<String>>();
 	
 	/**
 	 * <tt>FingerTable(int nodeKey, String nodeIp, int nodePort,  int m,  int totalNodeCount)</tt>
@@ -205,9 +205,10 @@ public class FingerTable {
 	 * <p>
 	 * Use this for searches not for file dist.
 	 * <p>
+	 * Returns the IP of the given node key if it is in start keys. OR .
 	 * Returns the IP of the corresponding entry in the finger table to the given key in String format. 
 	 * 
-	 * @param  nodekey value of the node key whose corresponding entry in finger table is required
+	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
 	 * @return  IP of the node to send search req to.
 	 */
 	public String GetIp(int nodeKey) {
@@ -219,13 +220,42 @@ public class FingerTable {
 	 * <p>
 	 * Use this for searches not for file dist.
 	 * <p>
+	 * Returns the port of the given node key if it is in start keys. OR .
 	 * Returns the port value of the corresponding entry in the finger table to the given key. 
 	 * 
-	 * @param  nodekey value of the node key whose corresponding entry in finger table is required
+	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
 	 * @return  port value of the node to send search req to.
 	 */
 	public int GetPort(int nodeKey) {
 		return Integer.parseInt(allNodeDetails.get(FindPrevKey(nodeKey)).get(1));
+	}
+	
+	/**
+	 * <tt>public String GetIp(int nodeKey)</tt>
+	 * <p>
+	 * Use this for searches not for file dist.
+	 * <p>
+	 * Returns the IP of the given key in String format irrespective of its presence in finger table. 
+	 * 
+	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
+	 * @return  IP of the node to send search req to.
+	 */
+	public String GetIpOfThis(int nodeKey) {
+		return allNodeDetails.get(nodeKey).get(0);
+	}
+	
+	/**
+	 * <tt>public String GetPort(int nodeKey)</tt>
+	 * <p>
+	 * Use this for searches not for file dist.
+	 * <p>
+	 * Returns the port value of the given key irrespective of its presence in finger table. 
+	 * 
+	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
+	 * @return  port value of the node to send search req to.
+	 */
+	public int GetPortOfThis(int nodeKey) {
+		return Integer.parseInt(allNodeDetails.get(nodeKey).get(1));
 	}
 
 	/**
@@ -233,7 +263,7 @@ public class FingerTable {
 	 * <p>
 	 * Returns the key value of the successor entry to the given key in the finger table. 
 	 * 
-	 * @param  nodekey value of the node key whose successor entry in finger table is required
+	 * @param  key value of the node key whose successor entry in finger table is required
 	 * @return  key value of the successor node.
 	 */
 	public int GetSuccessor(int key) {
@@ -257,7 +287,7 @@ public class FingerTable {
 	 * <p>
 	 * Returns the key value of the predecessor entry to the given key in the finger table. 
 	 * 
-	 * @param  nodekey value of the node key whose predecessor entry in finger table is required
+	 * @param  key value of the node key whose predecessor entry in finger table is required
 	 * @return  key value of the predecessor node.
 	 */
 	public int GetPredecessor(int key) {
