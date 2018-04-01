@@ -107,7 +107,7 @@ public class FingerTable {
 	 * 
 	 * @param  nodeKey the value of the hash key of the node whose previous key in the Finger Table is needed.
 	 * @return value of the previous node key
-	 */
+	 *//*
 	public int FindPrevKey(int nodeKey) {
 		if (startKeys.contains(nodeKey)) {
 			return nodeKey;
@@ -117,7 +117,8 @@ public class FingerTable {
 			for (int i : startKeys) {
 				keysInOrder.add(i);
 			}
-			keysInOrder.add(nodeKey);
+			if(!keysInOrder.contains(nodeKey))
+				keysInOrder.add(nodeKey);
 			Collections.sort(keysInOrder);
 			if(keysInOrder.indexOf(nodeKey)!=0) {
 				return fingerMap.get(keysInOrder.get(keysInOrder.indexOf(nodeKey) - 1));
@@ -128,14 +129,14 @@ public class FingerTable {
 		}
 	}
 	
-	/**
+	*//**
 	 * <tt>	public int FindNextKey(int nodeKey)</tt>
 	 * <p>
 	 * Finds the next key in the start keys to the given nodeKey and returns its mapping in finger table.
 	 * 
 	 * @param  nodeKey the value of the hash key of the node whose next key in the Finger Table is needed.
 	 * @return value of the next node key
-	 */
+	 *//*
 	public int FindNextKey(int nodeKey) {
 		if (startKeys.contains(nodeKey)) {
 			return nodeKey;
@@ -145,7 +146,8 @@ public class FingerTable {
 			for (int i : startKeys) {
 				keysInOrder.add(i);
 			}
-			keysInOrder.add(nodeKey);
+			if(!keysInOrder.contains(nodeKey))
+				keysInOrder.add(nodeKey);
 			Collections.sort(keysInOrder);
 			System.out.println(keysInOrder+"|"+nodeKey);
 			if(keysInOrder.indexOf(nodeKey)<keysInOrder.size()-1) {
@@ -155,7 +157,7 @@ public class FingerTable {
 				return fingerMap.get(keysInOrder.get(0));
 			}
 		}
-	}
+	}*/
 	
 	/**
 	 * <tt>public void AddEntry(int nodeKey, String ip, int port)</tt>
@@ -212,7 +214,7 @@ public class FingerTable {
 	 * @return  IP of the node to send search req to.
 	 */
 	public String GetIp(int nodeKey) {
-		return allNodeDetails.get(FindPrevKey(nodeKey)).get(0);
+		return allNodeDetails.get(nodeKey).get(0);
 	}
 	
 	/**
@@ -227,37 +229,9 @@ public class FingerTable {
 	 * @return  port value of the node to send search req to.
 	 */
 	public int GetPort(int nodeKey) {
-		return Integer.parseInt(allNodeDetails.get(FindPrevKey(nodeKey)).get(1));
-	}
-	
-	/**
-	 * <tt>public String GetIp(int nodeKey)</tt>
-	 * <p>
-	 * Use this for searches not for file dist.
-	 * <p>
-	 * Returns the IP of the given key in String format irrespective of its presence in finger table. 
-	 * 
-	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
-	 * @return  IP of the node to send search req to.
-	 */
-	public String GetIpOfThis(int nodeKey) {
-		return allNodeDetails.get(nodeKey).get(0);
-	}
-	
-	/**
-	 * <tt>public String GetPort(int nodeKey)</tt>
-	 * <p>
-	 * Use this for searches not for file dist.
-	 * <p>
-	 * Returns the port value of the given key irrespective of its presence in finger table. 
-	 * 
-	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
-	 * @return  port value of the node to send search req to.
-	 */
-	public int GetPortOfThis(int nodeKey) {
 		return Integer.parseInt(allNodeDetails.get(nodeKey).get(1));
 	}
-
+		
 	/**
 	 * <tt>public int GetSuccessor(int key)</tt>
 	 * <p>
@@ -268,17 +242,18 @@ public class FingerTable {
 	 */
 	public int GetSuccessor(int key) {
 		ArrayList<Integer> keysInOrder = new ArrayList<Integer>();
-		for (int i : fingerMap.values()) {
+		for (int i : startKeys) {
 			keysInOrder.add(i);
 		}
-		keysInOrder.add(key);
+		if(!keysInOrder.contains(key))
+			keysInOrder.add(key);
 		Collections.sort(keysInOrder);
 		int myIndex = keysInOrder.indexOf(key);
 		if(myIndex==keysInOrder.size()-1) {
-			return keysInOrder.get(0);
+			return fingerMap.get(keysInOrder.get(0));
 		}
 		else {
-			return  keysInOrder.get(myIndex+1);
+			return fingerMap.get(keysInOrder.get(myIndex+1));
 		}
 	}
 	
@@ -292,17 +267,18 @@ public class FingerTable {
 	 */
 	public int GetPredecessor(int key) {
 		ArrayList<Integer> keysInOrder = new ArrayList<Integer>();
-		for (int i : fingerMap.values()) {
+		for (int i : startKeys) {
 			keysInOrder.add(i);
 		}
-		keysInOrder.add(key);
+		if(!keysInOrder.contains(key))
+			keysInOrder.add(key);
 		Collections.sort(keysInOrder);
 		int myIndex = keysInOrder.indexOf(key);
 		if(myIndex==0) {
-			return keysInOrder.get(keysInOrder.size()-1);
+			return fingerMap.get(keysInOrder.get(keysInOrder.size()-1));
 		}
 		else {
-			return keysInOrder.get(myIndex-1);
+			return fingerMap.get(keysInOrder.get(myIndex-1));
 		}
 	}
 	

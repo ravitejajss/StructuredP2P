@@ -36,6 +36,7 @@ public class structuredPeer {
 	private static ConcurrentHashMap<Integer, String> allFileDetails = new ConcurrentHashMap<Integer,String>();
 	                              // fileKey  fileName
 	private static int myKey;
+	private static peerListen lis;
 	private static int totalNodeCount = 20;
 	private static final int m = 15;
 	private static int succKey;
@@ -87,7 +88,7 @@ public class structuredPeer {
 			fingerTable = new FingerTable(myKey, myIP, myPort, m, totalNodeCount);
 			System.out.println("Fingertable initiated"); //test print
 			
-			peerListen lis = new peerListen(myPort, myIP, keyTable, allFileDetails, fingerTable, uname);
+			lis = new peerListen(myPort, myIP, keyTable, allFileDetails, fingerTable);
 			lis.start();
 			System.out.println("listen thread will start here"); //test print
 			
@@ -96,10 +97,13 @@ public class structuredPeer {
 			System.out.println("loaded resources"); //test print
 			resgisterNode();
 			
+			fingerTable.PrintStats();
 			AddResourcesToNetwork();
 			System.out.println("Added resources to n/w"); //test print
+			
 			GetKeysFromSuccessor();
 			System.out.println("Got keys from succ."); //test print
+			
 			System.out.println("you can give commands now"); //test print
 			
 			while(true) { 
@@ -133,7 +137,12 @@ public class structuredPeer {
 					break;
 				
 				case "search"://INCOMPLETE: has to deal with part file names
-					int key = hash(S[1]);
+					String file = "";
+					for(int i = 1; i<S.length; i++)
+						file += " "+ S[i];
+					file = file.substring(1);
+					System.out.println("file: "+ file);
+					int key = hash(file);
 					search(key);
 					break;
 					
@@ -142,15 +151,15 @@ public class structuredPeer {
 					break;
 					
 				case "answered":
-					System.out.println("\nAnswered requests: "+ lis.answered);
+					System.out.println("\nAnswered requests: "+ lis.answered +"\n");
 					break;
 					
 				case "forwarded":
-					System.out.println("\nForwarded requests: "+ lis.forwarded);
+					System.out.println("\nForwarded requests: "+ lis.forwarded +"\n");
 					break;	
 					
 				case "received":
-					System.out.println("\nReceived requests: "+ (lis.answered+lis.forwarded));
+					System.out.println("\nReceived requests: "+ (lis.answered+lis.forwarded) +"\n");
 					break;	
 					
 				case "DEL":
@@ -162,7 +171,7 @@ public class structuredPeer {
 					break;
 					
 				default:
-					System.out.println("Usage: \n"
+					System.out.println("\nUsage: \n"
 							+ "DEL UNAME <username>:                    Deletes the network <username> from Bootstrap Server.\n"
 							+ "fingertable:                             Prints finger table.\n"
 							+ "entries:                                 Prints resources in this node.\n"
@@ -196,7 +205,8 @@ public class structuredPeer {
 		isSearchComplete = false;
 		if(!keyTable.containsKey(key)) {
 			String sendMsg = "SER "+ myIP +" "+ myPort +" "+ key;
-			int respKey = fingerTable.FindNextKey(key);
+			sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
+			int respKey = fingerTable.GetSuccessor(key);
 			String ip = fingerTable.GetIp(respKey);
 			int port = fingerTable.GetPort(respKey);
 			Send(sendMsg, ip, port);
@@ -211,26 +221,33 @@ public class structuredPeer {
 		succKey = fingerTable.GetSuccessor(myKey);
 		succIp = fingerTable.GetIp(succKey);
 		succPort = fingerTable.GetPort(succKey);
-		String msg = "GETKY "+ myKey;
-		msg = String.format("%04d", msg.length()) +" "+ msg;
-		String crudeReply = sendrec(msg, succIp, succPort);
-		String[] reply = crudeReply.split(" ");
-		for (int i = 3; i < reply.length; i+=4) {
-			String ip = reply[i];
-			String stringPort = reply[i+1];
-			int port = Integer.parseInt(stringPort);
-			int fileKey = Integer.parseInt(reply[i+2]);
-			int nodeKey = hash(ip+":"+stringPort);
-			fingerTable.AddDetails(nodeKey, ip, port);
-			if(keyTable.containsKey(fileKey)) {
-				ArrayList<Integer> nodesHasFile = keyTable.get(fileKey);
-				nodesHasFile.add(nodeKey);
-				keyTable.put(fileKey, nodesHasFile);
-			}
-			else {
-				ArrayList<Integer> nodesHasFile = new ArrayList<Integer>();
-				nodesHasFile.add(nodeKey);
-				keyTable.put(fileKey, nodesHasFile);
+		System.out.println("getting keys from succ: "+ succKey +"myKey :"+ myKey);
+		if(succKey!=myKey) {
+			String msg = "GETKY "+ myKey;
+			msg = String.format("%04d", msg.length()) +" "+ msg;
+			String crudeReply = sendrec(msg, succIp, succPort);
+			String[] rcvdExploded = crudeReply.split(" ");
+			int noOfKeys = Integer.parseInt(rcvdExploded[2]);
+			if(noOfKeys>0) {
+				String[] reply = crudeReply.substring(17).split("#");
+				for (int i = 3; i < reply.length; i++) {
+					String[] fileDetails = reply[i].split(" ");
+					String ip = fileDetails[0];
+					int port = Integer.parseInt(fileDetails[1]);
+					int fileKey = Integer.parseInt(fileDetails[2]);
+					int nodeKey = hash(ip+":"+fileDetails[1]);
+					fingerTable.AddDetails(nodeKey, ip, port);
+					if(keyTable.containsKey(fileKey)) {
+						ArrayList<Integer> nodesHasFile = keyTable.get(fileKey);
+						nodesHasFile.add(nodeKey);
+						keyTable.put(fileKey, nodesHasFile);
+					}
+					else {
+						ArrayList<Integer> nodesHasFile = new ArrayList<Integer>();
+						nodesHasFile.add(nodeKey);
+						keyTable.put(fileKey, nodesHasFile);
+					}
+				}
 			}
 		}
 	}
@@ -239,27 +256,30 @@ public class structuredPeer {
 		succKey = fingerTable.GetSuccessor(myKey);
 		succIp = fingerTable.GetIp(succKey);
 		succPort = fingerTable.GetPort(succKey);
-		String keyMsg = Integer.toString(keyTable.keySet().size());
-		for(int i : keyTable.keySet()) {
-			int fileKey = i;
-			ArrayList<Integer> nodeKeys = keyTable.get(i);
-			String file = allFileDetails.get(fileKey);
-			for(int i1 : nodeKeys) {
-				int nodePort = fingerTable.GetPort(i1);
-				String nodeIp = fingerTable.GetIp(i1);
-				keyMsg +=  " "+ nodeIp +" "+ Integer.toString(nodePort) +" "+ Integer.toString(fileKey) +" "+ file +"\n";
+		System.out.println("giving keys to succ: "+ succKey +"myKey :"+ myKey);
+		if(succKey!=myKey) {
+			String keyMsg = " ";
+			for(int i : keyTable.keySet()) {
+				int fileKey = i;
+				ArrayList<Integer> nodeKeys = keyTable.get(i);
+				String file = allFileDetails.get(fileKey);
+				for(int i1 : nodeKeys) {
+					int nodePort = fingerTable.GetPort(i1);
+					String nodeIp = fingerTable.GetIp(i1);
+					keyMsg +=  nodeIp +" "+ Integer.toString(nodePort) +" "+ Integer.toString(fileKey) +" "+ file +"#";
+				}
 			}
-		}
-		keyMsg = "GIVEKY " + String.format("%03d", keyTable.size()) +" "+ keyMsg.substring(0,keyMsg.length()-1);
-		keyMsg = String.format("%04d", keyMsg.length()) +" "+ keyMsg;
-		if(succKey!=myKey)
+			keyMsg = "GIVEKY " + String.format("%03d", keyTable.size()) + keyMsg.substring(0,keyMsg.length()-1);
+			keyMsg = String.format("%04d", keyMsg.length()) +" "+ keyMsg;
+			System.out.println(keyMsg);
 			sendrec(keyMsg, succIp, succPort);
+		}
 	}
 	
 	public static void Send(String msg, String ip, int port) throws IOException {
 		Socket socket = new Socket(ip,port);
 		DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-		System.out.println("listen.send sending: "+msg);
+		System.out.println("main.send sending: "+msg);
 		out.write(msg.getBytes("UTF-8"));
 		System.out.println("sent");
 		socket.close();
@@ -364,17 +384,24 @@ public class structuredPeer {
 	public static void AddResourcesToNetwork() throws NoSuchAlgorithmException, IOException{
 		for (String file : nodeResources) {
 			int fileKey = hash(file);
-			String nodeIp = fingerTable.GetIp(fileKey);
-			int nodePort = fingerTable.GetPort(fileKey);
-			String msg = "ADD "+ nodeIp +" "+ nodePort +" "+ fileKey +" "+ file;
+			int respKey = fingerTable.GetSuccessor(fileKey);
+			System.out.println(respKey);
+			String nodeIp = fingerTable.GetIp(respKey);
+			int nodePort = fingerTable.GetPort(respKey);
+			String msg = "ADD "+ myIP +" "+ myPort +" "+ fileKey +" "+ file;
 			msg = String.format("%04d", msg.length()) +" "+ msg;
 			sendrec(msg,nodeIp,nodePort);
+			//adding resource to my key table
+			ArrayList<Integer> nodesHasFile = new ArrayList<Integer>();
+			nodesHasFile.add(myKey);
+			keyTable.put(fileKey, nodesHasFile);
 		}		
 	}
 	
 	public static void exit(int status) {
 		logger.log(Level.INFO,"Shutting down the node with status "+ status +".");
 		log_file.close();
+		lis.log_file.close();
 		sc.close();
 		try {
 			sock.close();
@@ -382,6 +409,7 @@ public class structuredPeer {
 			System.err.println("ERROR: IO exception in closing socket");
 			logger.log(Level.WARNING, "ERROR: IO exception in closing socket");
 			e.printStackTrace();
+			System.exit(1);
 		}
 		System.exit(status);
 	}
