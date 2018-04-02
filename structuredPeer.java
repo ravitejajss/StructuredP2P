@@ -18,8 +18,11 @@ import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
+import org.apache.commons.math3.distribution.ZipfDistribution;
+
 
 public class structuredPeer {
+	// global variables
 	public static boolean isSearchComplete;
 
 	private static Logger logger = Logger.getLogger("NodeLog");
@@ -37,7 +40,6 @@ public class structuredPeer {
 	                              // fileKey  fileName
 	private static int myKey;
 	private static peerListen lis;
-	private static int totalNodeCount = 20;
 	private static final int m = 15;
 	private static int succKey;
 	private static String succIp;
@@ -49,7 +51,7 @@ public class structuredPeer {
 	public static void main(String[] args) throws NoSuchAlgorithmException {
 		
 		try {
-			
+			//help printer
 			if (Arrays.asList(args).contains("--help") || Arrays.asList(args).contains("-h")) {
 				StringBuilder helpBuilder = new StringBuilder();
 		        helpBuilder.append("java structuredPeer <portnum> <bootstrap ip> <bootstrap port>");
@@ -65,7 +67,7 @@ public class structuredPeer {
 		        System.out.println(helpBuilder.toString());
 	            exit(0);            
 	        }
-			
+			//initialize variables
 			log_file = new FileHandler("Node.Log");                       //Providing a file to the file handler.
 			SimpleFormatter formatter = new SimpleFormatter();            //Logging in Human readable format.
 			log_file.setFormatter(formatter);
@@ -85,39 +87,37 @@ public class structuredPeer {
 			}
 			
 			myKey = hash(sockAdd);
-			fingerTable = new FingerTable(myKey, myIP, myPort, m, totalNodeCount);
-			System.out.println("Fingertable initiated"); //test print
-			
+			fingerTable = new FingerTable(myKey, myIP, myPort, m);
+			//start listen thread
 			lis = new peerListen(myPort, myIP, keyTable, allFileDetails, fingerTable);
 			lis.start();
-			System.out.println("listen thread will start here"); //test print
-			
+			//taking 5 resources per node
 			int noOfResources = 5;
 			LoadResources(noOfResources);
-			System.out.println("loaded resources"); //test print
+			
 			resgisterNode();
 			
-			fingerTable.PrintStats();
 			AddResourcesToNetwork();
-			System.out.println("Added resources to n/w"); //test print
 			
 			GetKeysFromSuccessor();
-			System.out.println("Got keys from succ."); //test print
 			
-			System.out.println("you can give commands now"); //test print
+			System.out.println("you can give commands now");
 			
 			while(true) { 
 				String s = sc.nextLine();                                        // Accepting the User Entry Commands.
 				String[] S = s.split(" ");
 				switch (S[0]) {
+				//print details
 				case "details":
 					System.out.println("\nMy details:\nIP: "+myIP+" Port: "+myPort+" Key: "+myKey+"\n");
 					break;
 					
+				// print finger table
 				case "fingertable":
 					fingerTable.PrintStats();
 					break;
 					
+				//print key table
 				case "keytable":
 					System.out.println("\nFile     Node");
 					for (int i : keyTable.keySet()) {
@@ -129,6 +129,7 @@ public class structuredPeer {
 					System.out.println("\n"+nodeResources);
 					break;
 					
+				//print entries
 				case "entries":
 					System.out.println("\nMy resources are:\n");
 					for(String i : nodeResources) {
@@ -136,7 +137,8 @@ public class structuredPeer {
 					}
 					break;
 				
-				case "search"://INCOMPLETE: has to deal with part file names
+				// search for a file
+				case "search":
 					String file = "";
 					for(int i = 1; i<S.length; i++)
 						file += " "+ S[i];
@@ -145,23 +147,40 @@ public class structuredPeer {
 					int key = hash(file);
 					search(key);
 					break;
+				
+				// Zipf's distribution queries	
+				case "queries":
+					try {												// Generating given number of queries with the given zipf's distribution exponent. 
+						queries(Integer.parseInt(S[1]), Double.parseDouble(S[2]));
+					} catch (ArrayIndexOutOfBoundsException e) {
+						System.out.println("Usage:\n"
+								+ "queries <no of queries> <Zipf's exponent>: "
+								+ "Sends the number of queries as asked by the user with the given Zipf's distribution");
+						}
 					
+					break;
+				
+				// exit node
 				case "exit":
 					deleteNode();
 					break;
 					
+				// answered queries
 				case "answered":
 					System.out.println("\nAnswered requests: "+ lis.answered +"\n");
 					break;
 					
+				//forwarded queries
 				case "forwarded":
 					System.out.println("\nForwarded requests: "+ lis.forwarded +"\n");
 					break;	
 					
+				// received queries
 				case "received":
-					System.out.println("\nReceived requests: "+ (lis.answered+lis.forwarded) +"\n");
+					System.out.println("\nReceived requests: "+ lis.received +"\n");
 					break;	
-					
+				
+				// delete username from bootstrap	
 				case "DEL":
 					String msg = "DEL UNAME "+ uname;
 					msg = String.format("%04d", msg.length()) +" "+ msg;
@@ -204,7 +223,7 @@ public class structuredPeer {
 	private static void search(int key) throws IOException {
 		isSearchComplete = false;
 		if(!keyTable.containsKey(key)) {
-			String sendMsg = "SER "+ myIP +" "+ myPort +" "+ key;
+			String sendMsg = "SER 07 "+ System.currentTimeMillis() +" "+ myIP +" "+ myPort +" "+ key;
 			sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
 			int respKey = fingerTable.GetSuccessor(key);
 			String ip = fingerTable.GetIp(respKey);
@@ -217,11 +236,48 @@ public class structuredPeer {
 		}
 	}
 
+	private static void queries(int numOfQueries, Double s) {  		// Method for Generating given number of queries with given zipf's distribution exponent.
+		try {
+			String[] resources = allFileDetails.values().toArray(new String[0]);
+			ZipfDistribution zf = new ZipfDistribution(resources.length, s);  // Initializing the zipf's distribution.
+			int searchKeyIndex;
+			
+			for (int i = 0; i < numOfQueries; i++) {				// Generating the given number of queries.
+				searchKeyIndex = zf.sample() - 1;
+				
+				if (searchKeyIndex < 0) {
+					searchKeyIndex = 0;
+				}
+				
+				if (searchKeyIndex > resources.length) {
+					searchKeyIndex = resources.length - 1;
+				}
+				
+				int searchKey = hash(resources[searchKeyIndex]);				// Selecting the file name randomly based on priority.
+				search(searchKey);
+			}
+		} catch (NumberFormatException e) {
+			System.err.println("Error in queries: Got non-integer port number.");
+			logger.log(Level.WARNING, "Error in queries: Got non-integer port number.");
+			e.printStackTrace();
+			exit(1);
+		} catch (NoSuchAlgorithmException e) {
+			System.err.println("Error in queries:");
+			logger.log(Level.WARNING, "Error in queries:");
+			e.printStackTrace();
+			exit(1);
+		} catch (IOException e) {
+			System.err.println("Error in queries:");
+			logger.log(Level.WARNING, "Error in queries:");
+			e.printStackTrace();
+			exit(1);
+		}
+	}
+	
 	private static void GetKeysFromSuccessor() throws IOException, NoSuchAlgorithmException {
 		succKey = fingerTable.GetSuccessor(myKey);
 		succIp = fingerTable.GetIp(succKey);
 		succPort = fingerTable.GetPort(succKey);
-		System.out.println("getting keys from succ: "+ succKey +"myKey :"+ myKey);
 		if(succKey!=myKey) {
 			String msg = "GETKY "+ myKey;
 			msg = String.format("%04d", msg.length()) +" "+ msg;
@@ -256,7 +312,6 @@ public class structuredPeer {
 		succKey = fingerTable.GetSuccessor(myKey);
 		succIp = fingerTable.GetIp(succKey);
 		succPort = fingerTable.GetPort(succKey);
-		System.out.println("giving keys to succ: "+ succKey +"myKey :"+ myKey);
 		if(succKey!=myKey) {
 			String keyMsg = " ";
 			for(int i : keyTable.keySet()) {
@@ -271,7 +326,6 @@ public class structuredPeer {
 			}
 			keyMsg = "GIVEKY " + String.format("%03d", keyTable.size()) + keyMsg.substring(0,keyMsg.length()-1);
 			keyMsg = String.format("%04d", keyMsg.length()) +" "+ keyMsg;
-			System.out.println(keyMsg);
 			sendrec(keyMsg, succIp, succPort);
 		}
 	}
@@ -279,26 +333,20 @@ public class structuredPeer {
 	public static void Send(String msg, String ip, int port) throws IOException {
 		Socket socket = new Socket(ip,port);
 		DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-		System.out.println("main.send sending: "+msg);
 		out.write(msg.getBytes("UTF-8"));
-		System.out.println("sent");
 		socket.close();
 	}
 
 	public static String sendrec(String Message, String ip, int Port) throws IOException{
-		System.out.println();
 		logger.log(Level.INFO, "Trying to send the message to Socket address: " + ip + " " + Port);
-		System.out.println("Trying to send the message to Socket address: " + ip + " " + Port);
 		sock = new Socket(ip, Port);
 		DataOutputStream out = new DataOutputStream(sock.getOutputStream());
 		DataInputStream in = new DataInputStream(sock.getInputStream());
-		System.out.println("main.sendrec sending: "+Message);
 		out.write(Message.getBytes("UTF-8"));
 	    byte[] rcvdBytes = new byte[10000];
 	    in.read(rcvdBytes);
 	    String recv = new String(rcvdBytes,0,rcvdBytes.length,"UTF-8");
 	    recv= recv.replaceAll("\\p{C}", "");
-	    System.out.println("main.sendrec received: "+recv);
 	    sock.close();
 		logger.log(Level.INFO, "Received the message from Socket address: " + ip + " " + Port);
 		return recv;
@@ -385,7 +433,6 @@ public class structuredPeer {
 		for (String file : nodeResources) {
 			int fileKey = hash(file);
 			int respKey = fingerTable.GetSuccessor(fileKey);
-			System.out.println(respKey);
 			String nodeIp = fingerTable.GetIp(respKey);
 			int nodePort = fingerTable.GetPort(respKey);
 			String msg = "ADD "+ myIP +" "+ myPort +" "+ fileKey +" "+ file;
@@ -404,6 +451,8 @@ public class structuredPeer {
 		lis.log_file.close();
 		sc.close();
 		try {
+			if (status ==1)
+				deleteNodeBootstrap();
 			sock.close();
 		} catch (IOException e) {
 			System.err.println("ERROR: IO exception in closing socket");

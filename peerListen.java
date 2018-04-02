@@ -1,9 +1,12 @@
+import java.io.BufferedWriter;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.FileHandler;
@@ -14,6 +17,7 @@ import java.util.logging.SimpleFormatter;
 public class peerListen extends Thread{
 	public int answered = 0;
 	public int forwarded = 0;
+	public int received = 0;
 	
 	private String myIP;
 	private int myPort;
@@ -22,8 +26,9 @@ public class peerListen extends Thread{
 	private FingerTable fingerTable;
 	private ServerSocket Sock;
 	private ConcurrentHashMap<Integer, String> allFileDetails;
-	private Logger logger = Logger.getLogger("ListenLog");		// Declaring the global variables.
+	private Logger logger = Logger.getLogger("ListenLog");
 	FileHandler log_file;
+	private ArrayList<String> HandledMsgs = new ArrayList<String>();
 	private Socket sock;
 	
 	peerListen(int myPort, String myIP, ConcurrentHashMap<Integer, ArrayList<Integer>> keyTable, ConcurrentHashMap<Integer, String> allFileDetails, FingerTable fingerTable) throws NoSuchAlgorithmException {
@@ -55,7 +60,6 @@ public class peerListen extends Thread{
 		
 		while(true) {
 			try {
-				System.out.println("waiting for connection");
 				sock = Sock.accept();
 				String rcvd = rcv();
 				String[] rcvMsg = rcvd.split(" ");
@@ -65,7 +69,6 @@ public class peerListen extends Thread{
 				case "ADD":
 				{	//Get all node details of peer that has this file
 					int nodeKey = structuredPeer.hash(rcvMsg[2]+":"+rcvMsg[3]);
-					System.out.println(rcvMsg[2]+":"+rcvMsg[3]);
 					//Get file key
 					int fileKey = Integer.parseInt(rcvMsg[4]);
 					//Get file name
@@ -74,15 +77,12 @@ public class peerListen extends Thread{
 						file +=  " "+ rcvMsg[i];
 					}
 					file = file.substring(1);
-					System.out.println(file+"|");
 					//corruption check
 					if(fileKey==structuredPeer.hash(file)) {
-						System.out.println(fingerTable.GetPredecessor(myKey)+"|"+fileKey+"|"+myKey);
 						int predKey = fingerTable.GetPredecessor(myKey);
 						
 						//Add to key table if it is yours
 						if((predKey<fileKey&fileKey<=myKey)||predKey==myKey||(fileKey<=myKey||fileKey>predKey)) {
-							System.out.println("adding: "+fileKey+"|"+nodeKey);
 							if(keyTable.containsKey(fileKey)) {
 								ArrayList<Integer> nodesHasFile = keyTable.get(fileKey);
 								if(!nodesHasFile.contains(nodeKey))
@@ -99,7 +99,6 @@ public class peerListen extends Thread{
 						//Forward to responsible peer if not yours
 						else {
 							int respKey = fingerTable.GetSuccessor(fileKey);
-							System.out.println("found: "+respKey+"|"+myKey);
 							if(respKey!=myKey)
 								structuredPeer.Send(rcvd,fingerTable.GetIp(respKey),fingerTable.GetPort(respKey));
 						}
@@ -111,13 +110,6 @@ public class peerListen extends Thread{
 						System.out.println("Error in listen thread: Got corrupted fileKey in ADD");
 						sendMsg = "0007 ADDOK 9998";
 						SendBack(sendMsg);
-					}
-					System.out.println("\nFile     Node - listen thread");
-					for (int i : keyTable.keySet()) {
-						ArrayList<String> nodes = new ArrayList<String>();
-						for(int j: keyTable.get(i))
-							nodes.add(String.format("%05d", j));
-						System.out.println(String.format("%05d", i) +"   "+ nodes);
 					}
 				}
 					break;
@@ -152,7 +144,6 @@ public class peerListen extends Thread{
 							ArrayList<Integer> nodeKeys = keyTable.get(i);
 							for(int j : nodeKeys){
 								String file = allFileDetails.get(i);
-								System.out.println(j+": "+file);
 								String ip = fingerTable.GetIp(j);
 								int port = fingerTable.GetPort(j);
 								sendMsg += ip +" "+ port +" "+ i +" "+ file +"#";
@@ -162,7 +153,6 @@ public class peerListen extends Thread{
 					}
 					sendMsg = "GETKYOK "+ String.format("%03d", noOfKeys) + sendMsg.substring(0,sendMsg.length()-1);
 					sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
-					System.out.println(sendMsg);
 					SendBack(sendMsg);
 				}
 					break;
@@ -174,16 +164,10 @@ public class peerListen extends Thread{
 					String[] files = crudeFileDetails.split("#");
 					for(int i = 0; i<files.length;i++) {
 						String[] fileDetails = files[i].split(" ");
-						System.out.println(files[i]);
 						String ip = fileDetails[0];
 						int port = Integer.parseInt(fileDetails[1]);
 						int nodeKey = structuredPeer.hash(ip +":"+ fileDetails[1]);
 						int fileKey = Integer.parseInt(fileDetails[2]);
-						String file = "";
-						for(int j = 3; j<fileDetails.length; j++) {
-							file+= " "+ fileDetails[j];
-						}
-						System.out.println("file: "+ file);
 						if(keyTable.containsKey(fileKey)) {
 							ArrayList<Integer> nodesHasFile = keyTable.get(fileKey);
 							nodesHasFile.add(nodeKey);
@@ -204,10 +188,18 @@ public class peerListen extends Thread{
 					
 				case "SER"://format: <length> SER <IP> <port> <Key>
 				{
-					int fileKey = Integer.parseInt(rcvMsg[4]);
+					received++;
+					String entry = rcvd.substring(0, 9) +" "+ rcvd.substring(11);
+					int hopCount = Integer.parseInt(rcvMsg[2]);
+					String SERip = rcvMsg[4];
+					int SERport = Integer.parseInt(rcvMsg[5]);
+					if(hopCount<=0) {
+						sendMsg = "0008 SEROK -1";
+						structuredPeer.Send(sendMsg, SERip, SERport);
+						break;
+					}
+					int fileKey = Integer.parseInt(rcvMsg[6]);
 					if(keyTable.keySet().contains(fileKey)) {
-						String SERip = rcvMsg[2];
-						int SERport = Integer.parseInt(rcvMsg[3]);
 						String file = allFileDetails.get(fileKey);
 						int no = 0;
 						sendMsg = "";
@@ -218,33 +210,47 @@ public class peerListen extends Thread{
 							sendMsg = ip +" "+ port +" "+ file +"\n";
 							no++;
 						}
-						sendMsg = "SEROK "+ String.format("%03d", no) +" "+ sendMsg.substring(0, sendMsg.length()-1);
+						sendMsg = "SEROK "+ String.format("%02d", (hopCount-1)) +" "+ rcvMsg[3] +" "+ String.format("%03d", no) +" "+ sendMsg.substring(0, sendMsg.length()-1);
 						sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
 						structuredPeer.Send(sendMsg, SERip, SERport);
-						System.out.println("lis.SER: msg sent using main.send()");
 						answered++;
 					}
 					else
 					{
-						int respKey = fingerTable.GetSuccessor(fileKey);
-						String ip = fingerTable.GetIp(respKey);
-						int port = fingerTable.GetPort(respKey);
-						System.out.println("listen.ser resp key : "+ respKey +"my key: "+ myKey +"\n");
-						if(respKey!=myKey)
-							structuredPeer.Send(rcvd, ip, port);
-						System.out.println("lis.SER: msg sent using main.send()\n");
-						forwarded++;
+						if(!HandledMsgs.contains(entry)) {
+							int respKey = fingerTable.GetResp(fileKey);
+							String ip = fingerTable.GetIp(respKey);
+							int port = fingerTable.GetPort(respKey);
+							if(respKey!=myKey) {
+								HandledMsgs.add(entry);
+								rcvd = rcvd.substring(0, 9) + String.format("%02d", (hopCount-1)) + rcvd.substring(11);
+								structuredPeer.Send(rcvd, ip, port);
+							}
+							forwarded++;
+						}
 					}
 				}
 					break;
 				
 				case "SEROK":
 				{
-					int noOfKeys = Integer.parseInt(rcvMsg[2]);
+					if(Integer.parseInt(rcvMsg[2])==-1) {
+						System.out.println("Search successfully comleted. File not present in the network\n");
+						structuredPeer.isSearchComplete=true;
+						break;
+					}
+					int noOfKeys = Integer.parseInt(rcvMsg[4]);
 					if(noOfKeys>0) 
 					{
+						long timeNow = System.currentTimeMillis();
 						System.out.println("Search successfully comleted. Results are as shown below\n");
-						String crudeFileDetails = rcvd.substring(15);
+						int netHops = 7 - Integer.parseInt(rcvMsg[2]);
+						int netTime = (int) (timeNow - Long.parseLong(rcvMsg[3]));
+						Timestamp time = new Timestamp(timeNow);
+						String crudeFileDetails = "";
+						for(int i = 5; i< rcvMsg.length; i++)
+							crudeFileDetails += " "+ rcvMsg[i];
+						crudeFileDetails = crudeFileDetails.substring(1);
 						String[] files = crudeFileDetails.split("\n");
 						for(int i = 0; i<files.length;i++) {
 							String[] fileDetails = files[i].split(" ");
@@ -254,7 +260,14 @@ public class peerListen extends Thread{
 							for(int j = 2; j<fileDetails.length; j++) {
 								file+= " "+ fileDetails[j];
 							}
-							System.out.println("Found '"+ file +"' at IP: "+ ip +" Port: "+ port +"\n");
+							file = file.substring(1);
+							System.out.println("Found '"+ file +"' at IP: "+ ip +" Port: "+ port + " hops: " + Integer.toString(netHops) + " latency: " + Double.toString(netTime) +"\n");
+							String write = "Found '"+ file +"' at IP: "+ ip +" Port: "+ port + "\t" + Integer.toString(netHops) + "\t" + Double.toString(netTime) + "\t" + time + "\n";
+							BufferedWriter out = null;
+							FileWriter fr = new FileWriter("results.txt",true);						
+							out = new BufferedWriter(fr);
+							out.write(write);
+							out.close();
 						}
 						structuredPeer.isSearchComplete=true;
 					}
@@ -262,14 +275,18 @@ public class peerListen extends Thread{
 					break;
 					
 				default:
-					System.out.println("lis.main: swutch case default: received unknown msg");
+					System.out.println("Error: listen thread received unknown message");
 					break;
 				}
 			sock.close();
 			} catch (IOException e) {
+				System.err.println("Error: IO exception in listen thread.");
 				e.printStackTrace();
+				structuredPeer.exit(1);
 			} catch (NoSuchAlgorithmException e) {
 				System.err.println("Error: No Such Algorithm");
+				e.printStackTrace();
+				structuredPeer.exit(1);
 			}
 		}
 	}
@@ -280,15 +297,12 @@ public class peerListen extends Thread{
 	    in.read(rcvdBytes);
 	    String recv = new String(rcvdBytes,0,rcvdBytes.length,"UTF-8");
 	    recv = recv.replaceAll("\\p{C}", "");
-	    System.out.println("listen.rcv received: "+recv);
 		return recv;
 	}
 	
 	private void SendBack(String Message) throws IOException {
 		DataOutputStream out = new DataOutputStream(sock.getOutputStream());
-		System.out.println("listen.sendBack sending: "+Message);
 		out.write(Message.getBytes("UTF-8"));
-		System.out.println("sent");
 	}
 	
 }
