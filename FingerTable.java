@@ -132,10 +132,7 @@ public class FingerTable {
 	/**
 	 * <tt>public String GetIp(int nodeKey)</tt>
 	 * <p>
-	 * Use this for searches not for file dist.
-	 * <p>
-	 * Returns the IP of the given node key if it is in start keys. OR .
-	 * Returns the IP of the corresponding entry in the finger table to the given key in String format. 
+	 * Returns the IP of the given node key. 
 	 * 
 	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
 	 * @return  IP of the node to send search req to.
@@ -146,11 +143,7 @@ public class FingerTable {
 	
 	/**
 	 * <tt>public String GetPort(int nodeKey)</tt>
-	 * <p>
-	 * Use this for searches not for file dist.
-	 * <p>
-	 * Returns the port of the given node key if it is in start keys. OR .
-	 * Returns the port value of the corresponding entry in the finger table to the given key. 
+	 * Returns the port of the given node key.
 	 * 
 	 * @param  nodeKey value of the node key whose corresponding entry in finger table is required
 	 * @return  port value of the node to send search req to.
@@ -160,52 +153,37 @@ public class FingerTable {
 	}
 		
 	/**
-	 * <tt>public int GetSuccessor(int key)</tt>
+	 * <tt>public int GetSuccessor()</tt>
 	 * <p>
-	 * Returns the key value of the successor entry to the given key in the finger table. 
+	 * Returns the the node key in finger table of the successor node.
 	 * 
-	 * @param  key value of the node key whose successor entry in finger table is required
+	 * @param  key value of the node key in finger table of the successor node.
 	 * @return  key value of the successor node.
 	 */
-	public int GetSuccessor(int key) {
-		ArrayList<Integer> keysInOrder = new ArrayList<Integer>();
-		for (int i : startKeys) {
-			keysInOrder.add(i);
-		}
-		if(!keysInOrder.contains(key))
-			keysInOrder.add(key);
-		Collections.sort(keysInOrder);
-		int myIndex = keysInOrder.indexOf(key);
-		if(myIndex==keysInOrder.size()-1) {
-			return fingerMap.get(keysInOrder.get(0));
-		}
-		else {
-			return fingerMap.get(keysInOrder.get(myIndex+1));
-		}
+	public int GetSuccessor() {
+			return fingerMap.get(startKeys.get(0));
 	}
 	
 	/**
-	 * <tt>public int GetPredecessor(int key)</tt>
+	 * <tt>public int GetPredecessor()</tt>
 	 * <p>
-	 * Returns the key value of the predecessor entry to the given key in the finger table. 
+	 * Returns the key value of the predecessor to the called node. 
 	 * 
-	 * @param  key value of the node key whose predecessor entry in finger table is required
+	 * @param  key value of the predecessor node key
 	 * @return  key value of the predecessor node.
 	 */
-	public int GetPredecessor(int key) {
+	
+	public int GetPredecessor() {
 		ArrayList<Integer> keysInOrder = new ArrayList<Integer>();
-		for (int i : startKeys) {
+		for(int i : allNodeDetails.keySet())
 			keysInOrder.add(i);
-		}
-		if(!keysInOrder.contains(key))
-			keysInOrder.add(key);
 		Collections.sort(keysInOrder);
-		int myIndex = keysInOrder.indexOf(key);
+		int myIndex = keysInOrder.indexOf(myKey);
 		if(myIndex==0) {
-			return fingerMap.get(keysInOrder.get(keysInOrder.size()-1));
+			return keysInOrder.get(keysInOrder.size()-1);
 		}
 		else {
-			return fingerMap.get(keysInOrder.get(myIndex-1));
+			return keysInOrder.get(myIndex-1);
 		}
 	}
 	
@@ -218,7 +196,7 @@ public class FingerTable {
 	 * @return  key value of the predecessor node.
 	 */
 	public int GetResp(int key) {
-		int respKey = GetSuccessor(key);
+		int respKey = fingerMap.get(startKeys.get(0));
 		for ( int i = 0; i < startKeys.size()-1; i++) {
 			if ((startKeys.get(i) <= key) & (key < startKeys.get(i+1))){
 				return fingerMap.get(startKeys.get(i));
@@ -246,11 +224,13 @@ public class FingerTable {
 		for ( int i = 0; i < startKeys.size()-1; i++) {
 			System.out.println(String.format("%05d", startKeys.get(i))+ "      ["
 					+String.format("%05d", startKeys.get(i)) +","+ String.format("%05d", startKeys.get(i+1)) +")      "
-					+String.format("%05d", fingerMap.get(startKeys.get(i))));
+					+String.format("%05d", fingerMap.get(startKeys.get(i)))
+					+"  "+ allNodeDetails.get(fingerMap.get(startKeys.get(i))));
 		}
 		System.out.println(String.format("%05d", startKeys.get(startKeys.size()-1))+ "      ["+
 				String.format("%05d", startKeys.get(startKeys.size()-1)) +","+ String.format("%05d", this.myKey)
-				+")      " +String.format("%05d", fingerMap.get(startKeys.get(startKeys.size()-1))));
+				+")      " +String.format("%05d", fingerMap.get(startKeys.get(startKeys.size()-1)))
+				+"  "+ allNodeDetails.get(fingerMap.get(startKeys.get(startKeys.size()-1))));
 	}
 	
 	public void PrintStats() {

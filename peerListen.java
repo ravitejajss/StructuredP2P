@@ -28,7 +28,6 @@ public class peerListen extends Thread{
 	private ConcurrentHashMap<Integer, String> allFileDetails;
 	private Logger logger = Logger.getLogger("ListenLog");
 	FileHandler log_file;
-	private ArrayList<String> HandledMsgs = new ArrayList<String>();
 	private Socket sock;
 	
 	peerListen(int myPort, String myIP, ConcurrentHashMap<Integer, ArrayList<Integer>> keyTable, ConcurrentHashMap<Integer, String> allFileDetails, FingerTable fingerTable) throws NoSuchAlgorithmException {
@@ -79,30 +78,21 @@ public class peerListen extends Thread{
 					file = file.substring(1);
 					//corruption check
 					if(fileKey==structuredPeer.hash(file)) {
-						int predKey = fingerTable.GetPredecessor(myKey);
+						int predKey = fingerTable.GetPredecessor();
 						
 						//Add to key table if it is yours
-						if((predKey<fileKey&fileKey<=myKey)||predKey==myKey||(fileKey<=myKey||fileKey>predKey)) {
-							if(keyTable.containsKey(fileKey)) {
-								ArrayList<Integer> nodesHasFile = keyTable.get(fileKey);
-								if(!nodesHasFile.contains(nodeKey))
-									nodesHasFile.add(nodeKey);
-								keyTable.put(fileKey, nodesHasFile);
-							}
-							else {
-								ArrayList<Integer> nodesHasFile = new ArrayList<Integer>();
-								nodesHasFile.add(nodeKey);
-								keyTable.put(fileKey, nodesHasFile);
-							}
+						System.out.println(predKey+"|"+fileKey+"|"+myKey);
+						if((predKey<fileKey&fileKey<=myKey)||predKey==myKey) {
+							addKey(fileKey, nodeKey);
 							fingerTable.AddDetails(nodeKey, rcvMsg[2], Integer.parseInt(rcvMsg[3]));
 						}
 						//Forward to responsible peer if not yours
 						else {
-							int respKey = fingerTable.GetSuccessor(fileKey);
+							int respKey = fingerTable.GetResp(fileKey);
+							System.out.println(fileKey+"|"+respKey);
 							if(respKey!=myKey)
 								structuredPeer.Send(rcvd,fingerTable.GetIp(respKey),fingerTable.GetPort(respKey));
 						}
-						
 						sendMsg = "0007 ADDOK 0";
 						SendBack(sendMsg);
 					}
@@ -149,6 +139,7 @@ public class peerListen extends Thread{
 								sendMsg += ip +" "+ port +" "+ i +" "+ file +"#";
 							}
 							noOfKeys++;
+							keyTable.remove(i);
 						}
 					}
 					sendMsg = "GETKYOK "+ String.format("%03d", noOfKeys) + sendMsg.substring(0,sendMsg.length()-1);
@@ -189,45 +180,52 @@ public class peerListen extends Thread{
 				case "SER"://format: <length> SER <IP> <port> <Key>
 				{
 					received++;
-					String entry = rcvd.substring(0, 9) +" "+ rcvd.substring(11);
+					System.out.println(rcvd);
 					int hopCount = Integer.parseInt(rcvMsg[2]);
 					String SERip = rcvMsg[4];
 					int SERport = Integer.parseInt(rcvMsg[5]);
 					if(hopCount<=0) {
+						System.out.println("Hop count reached 0. Killing message.");
 						sendMsg = "0008 SEROK -1";
 						structuredPeer.Send(sendMsg, SERip, SERport);
 						break;
 					}
 					int fileKey = Integer.parseInt(rcvMsg[6]);
-					if(keyTable.keySet().contains(fileKey)) {
-						String file = allFileDetails.get(fileKey);
-						int no = 0;
-						sendMsg = "";
-						ArrayList<Integer> nodeKeys = keyTable.get(fileKey);
-						for(int i : nodeKeys) {
-							String ip = fingerTable.GetIp(i);
-							int port = fingerTable.GetPort(i);
-							sendMsg = ip +" "+ port +" "+ file +"\n";
-							no++;
+					int predKey = fingerTable.GetPredecessor();
+					System.out.println(predKey+"|"+myKey);
+					if(predKey<fileKey&fileKey<=myKey) {
+						if(keyTable.keySet().contains(fileKey)) {
+							String file = allFileDetails.get(fileKey);
+							int no = 0;
+							sendMsg = "";
+							ArrayList<Integer> nodeKeys = keyTable.get(fileKey);
+							for(int i : nodeKeys) {
+								String ip = fingerTable.GetIp(i);
+								int port = fingerTable.GetPort(i);
+								sendMsg = ip +" "+ port +" "+ file +"\n";
+								no++;
+							}
+							sendMsg = "SEROK "+ String.format("%02d", (hopCount-1)) +" "+ rcvMsg[3] +" "+ String.format("%03d", no) +" "+ sendMsg.substring(0, sendMsg.length()-1);
+							sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
+							structuredPeer.Send(sendMsg, SERip, SERport);
+							answered++;
 						}
-						sendMsg = "SEROK "+ String.format("%02d", (hopCount-1)) +" "+ rcvMsg[3] +" "+ String.format("%03d", no) +" "+ sendMsg.substring(0, sendMsg.length()-1);
-						sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
-						structuredPeer.Send(sendMsg, SERip, SERport);
-						answered++;
+						else {
+							sendMsg = "0008 SEROK -1";
+							structuredPeer.Send(sendMsg, SERip, SERport);
+						}
 					}
 					else
 					{
-						if(!HandledMsgs.contains(entry)) {
-							int respKey = fingerTable.GetResp(fileKey);
-							String ip = fingerTable.GetIp(respKey);
-							int port = fingerTable.GetPort(respKey);
-							if(respKey!=myKey) {
-								HandledMsgs.add(entry);
-								rcvd = rcvd.substring(0, 9) + String.format("%02d", (hopCount-1)) + rcvd.substring(11);
-								structuredPeer.Send(rcvd, ip, port);
-							}
-							forwarded++;
+						int respKey = fingerTable.GetResp(fileKey);
+						String ip = fingerTable.GetIp(respKey);
+						int port = fingerTable.GetPort(respKey);
+						if(respKey!=myKey) {
+							rcvd = rcvd.substring(0, 9) + String.format("%02d", (hopCount-1)) + rcvd.substring(11);
+							structuredPeer.Send(rcvd, ip, port);
 						}
+						forwarded++;
+						
 					}
 				}
 					break;
@@ -244,7 +242,7 @@ public class peerListen extends Thread{
 					{
 						long timeNow = System.currentTimeMillis();
 						System.out.println("Search successfully comleted. Results are as shown below\n");
-						int netHops = 7 - Integer.parseInt(rcvMsg[2]);
+						int netHops = 80 - Integer.parseInt(rcvMsg[2]);
 						int netTime = (int) (timeNow - Long.parseLong(rcvMsg[3]));
 						Timestamp time = new Timestamp(timeNow);
 						String crudeFileDetails = "";
@@ -288,6 +286,20 @@ public class peerListen extends Thread{
 				e.printStackTrace();
 				structuredPeer.exit(1);
 			}
+		}
+	}
+	
+	private void addKey(int fileKey, int nodeKey) {
+		if(keyTable.containsKey(fileKey)) {
+			ArrayList<Integer> nodesHasFile = keyTable.get(fileKey);
+			if(!nodesHasFile.contains(nodeKey))
+				nodesHasFile.add(nodeKey);
+			keyTable.put(fileKey, nodesHasFile);
+		}
+		else {
+			ArrayList<Integer> nodesHasFile = new ArrayList<Integer>();
+			nodesHasFile.add(nodeKey);
+			keyTable.put(fileKey, nodesHasFile);
 		}
 	}
 

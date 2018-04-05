@@ -38,6 +38,7 @@ public class structuredPeer {
 	                              // fileKey  nodeKey
 	private static ConcurrentHashMap<Integer, String> allFileDetails = new ConcurrentHashMap<Integer,String>();
 	                              // fileKey  fileName
+	private static ConcurrentHashMap<Integer, String> pickedResources = new ConcurrentHashMap<Integer,String>();
 	private static int myKey;
 	private static peerListen lis;
 	private static final int m = 15;
@@ -91,11 +92,10 @@ public class structuredPeer {
 			//start listen thread
 			lis = new peerListen(myPort, myIP, keyTable, allFileDetails, fingerTable);
 			lis.start();
-			//taking 5 resources per node
-			int noOfResources = 5;
-			LoadResources(noOfResources);
 			
-			resgisterNode();
+			int noOfPrevNodes = resgisterNode();
+			
+			LoadResources(noOfPrevNodes);
 			
 			AddResourcesToNetwork();
 			
@@ -114,7 +114,7 @@ public class structuredPeer {
 					
 				// print finger table
 				case "fingertable":
-					fingerTable.PrintStats();
+					fingerTable.Print();
 					break;
 					
 				//print key table
@@ -124,9 +124,10 @@ public class structuredPeer {
 						ArrayList<String> nodes = new ArrayList<String>();
 						for(int j: keyTable.get(i))
 							nodes.add(String.format("%05d", j));
-						System.out.println(String.format("%05d", i) +"   "+ nodes);
+						System.out.println(String.format("%05d", i) +"   "+ nodes +"   "+ allFileDetails.get(i));
 					}
-					System.out.println("\n"+nodeResources);
+					System.out.println("size: "+ keyTable.size());
+					//System.out.println("\nPicked Resources:"+nodeResources);
 					break;
 					
 				//print entries
@@ -143,7 +144,6 @@ public class structuredPeer {
 					for(int i = 1; i<S.length; i++)
 						file += " "+ S[i];
 					file = file.substring(1);
-					System.out.println("file: "+ file);
 					int key = hash(file);
 					search(key);
 					break;
@@ -220,12 +220,12 @@ public class structuredPeer {
 		}
 	}
 	
-	private static void search(int key) throws IOException {
+	private static void search(int fileKey) throws IOException {
 		isSearchComplete = false;
-		if(!keyTable.containsKey(key)) {
-			String sendMsg = "SER 07 "+ System.currentTimeMillis() +" "+ myIP +" "+ myPort +" "+ key;
+		if(!keyTable.containsKey(fileKey)) {
+			String sendMsg = "SER 80 "+ System.currentTimeMillis() +" "+ myIP +" "+ myPort +" "+ fileKey;
 			sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
-			int respKey = fingerTable.GetSuccessor(key);
+			int respKey = fingerTable.GetResp(fileKey);
 			String ip = fingerTable.GetIp(respKey);
 			int port = fingerTable.GetPort(respKey);
 			Send(sendMsg, ip, port);
@@ -253,8 +253,15 @@ public class structuredPeer {
 					searchKeyIndex = resources.length - 1;
 				}
 				
+				String file = resources[searchKeyIndex];
 				int searchKey = hash(resources[searchKeyIndex]);				// Selecting the file name randomly based on priority.
+				System.out.println("Searching for: "+ file);
 				search(searchKey);
+				while (true) {
+					if (isSearchComplete){
+						break;						
+					}
+				}
 			}
 		} catch (NumberFormatException e) {
 			System.err.println("Error in queries: Got non-integer port number.");
@@ -275,7 +282,7 @@ public class structuredPeer {
 	}
 	
 	private static void GetKeysFromSuccessor() throws IOException, NoSuchAlgorithmException {
-		succKey = fingerTable.GetSuccessor(myKey);
+		succKey = fingerTable.GetSuccessor();
 		succIp = fingerTable.GetIp(succKey);
 		succPort = fingerTable.GetPort(succKey);
 		if(succKey!=myKey) {
@@ -309,7 +316,7 @@ public class structuredPeer {
 	}
 	
 	private static void GiveKeysToSuccessor() throws IOException {
-		succKey = fingerTable.GetSuccessor(myKey);
+		succKey = fingerTable.GetSuccessor();
 		succIp = fingerTable.GetIp(succKey);
 		succPort = fingerTable.GetPort(succKey);
 		if(succKey!=myKey) {
@@ -382,20 +389,20 @@ public class structuredPeer {
 					fingerTable.AddEntry(key, ip, port);
 					sendrec(msg, ip, port);
 				}
-				return 0;
+				return noOfRcvdNodes;
 			}
 			else if (noOfRcvdNodes==9998) {
 				System.out.println("Node already registered. Unregistering first");
 				deleteNodeBootstrap();
-				resgisterNode();
-				return 0;
+				noOfRcvdNodes = resgisterNode();
+				return noOfRcvdNodes;
 			}
 			else if(noOfRcvdNodes==9999) {
 				System.out.println("Error in registering. Exiting");
 				exit(1);
 			}
 		}
-			return 1;		
+			return -1;		
 	}
 
 	public static void deleteNode() throws IOException {		
@@ -430,19 +437,25 @@ public class structuredPeer {
 	}
 
 	public static void AddResourcesToNetwork() throws NoSuchAlgorithmException, IOException{
-		for (String file : nodeResources) {
-			int fileKey = hash(file);
-			int respKey = fingerTable.GetSuccessor(fileKey);
+		for (int fileKey : pickedResources.keySet()) {
+			String file = pickedResources.get(fileKey);
+			int respKey = fingerTable.GetResp(fileKey);
 			String nodeIp = fingerTable.GetIp(respKey);
 			int nodePort = fingerTable.GetPort(respKey);
 			String msg = "ADD "+ myIP +" "+ myPort +" "+ fileKey +" "+ file;
 			msg = String.format("%04d", msg.length()) +" "+ msg;
 			sendrec(msg,nodeIp,nodePort);
-			//adding resource to my key table
-			ArrayList<Integer> nodesHasFile = new ArrayList<Integer>();
-			nodesHasFile.add(myKey);
-			keyTable.put(fileKey, nodesHasFile);
 		}		
+	}
+	
+	public static void AddResourcesToNetwork(String file) throws NoSuchAlgorithmException, IOException{
+		int fileKey = hash(file);
+		int respKey = fingerTable.GetResp(fileKey);
+		String nodeIp = fingerTable.GetIp(respKey);
+		int nodePort = fingerTable.GetPort(respKey);
+		String msg = "ADD "+ myIP +" "+ myPort +" "+ fileKey +" "+ file;
+		msg = String.format("%04d", msg.length()) +" "+ msg;
+		sendrec(msg,nodeIp,nodePort);		
 	}
 	
 	public static void exit(int status) {
@@ -493,16 +506,11 @@ public class structuredPeer {
 			}
 		}
 		
-		int i = 0;
-		while(i<noOfResources) {
-			int rand = (int) (Math.random()*allFileDetails.size());
-			if(nodeResources.contains(resources.get(rand))) {
-				continue;
-			}
-			else {
-				nodeResources.add(resources.get(rand));
-				i++;
-			}
+		int fstFile = 8 * noOfResources;
+		for (int i = fstFile; i<fstFile+8; i++) {
+			nodeResources.add(resources.get(i));
+			pickedResources.put(hash(resources.get(i)), resources.get(i));
 		}
+		System.out.println(nodeResources);
 	}
 }
