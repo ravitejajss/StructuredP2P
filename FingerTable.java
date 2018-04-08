@@ -197,10 +197,30 @@ public class FingerTable {
 	 */
 	public int GetResp(int key) {
 		int respKey = fingerMap.get(startKeys.get(0));
-		for ( int i = 0; i < startKeys.size()-1; i++) {
-			if ((startKeys.get(i) <= key) & (key < startKeys.get(i+1))){
-				return fingerMap.get(startKeys.get(i));
-			}	
+		for ( int i = 0; i < startKeys.size(); i++) {
+			if(i==startKeys.size()-1) {
+				System.out.println("-"+startKeys.get(i)+" "+key+" "+startKeys.get(0)+" "+(((startKeys.get(i) <= key) & (key<=32768)) || ((0<=key) & (key < startKeys.get(0)))));
+				if (((startKeys.get(i) <= key) & (key<=32768)) || ((0<=key) & (key < startKeys.get(0)))){
+					respKey = fingerMap.get(startKeys.get(i));
+					break;
+				}
+			}
+			else {
+				if(startKeys.get(i)>startKeys.get(i+1)) {
+					System.out.println(startKeys.get(i)+" "+key+" "+startKeys.get(i+1)+" "+(((startKeys.get(i) <= key) & (key<=32768)) || ((0<=key) & (key < startKeys.get(i+1)))));
+					if (((startKeys.get(i) <= key) & (key<=32768)) || ((0<=key) & (key < startKeys.get(i+1)))){
+						respKey= fingerMap.get(startKeys.get(i));
+						break;
+					}
+				}
+				else {
+					if (((startKeys.get(i) <= key) & (key < startKeys.get(i+1)))){
+						respKey= fingerMap.get(startKeys.get(i));
+						break;
+				}
+				
+				}
+			}
 		}
 		return respKey;
 	}

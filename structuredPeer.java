@@ -23,7 +23,7 @@ import org.apache.commons.math3.distribution.ZipfDistribution;
 
 public class structuredPeer {
 	// global variables
-	public static boolean isSearchComplete;
+	public static boolean isSearchComplete = false;
 
 	private static Logger logger = Logger.getLogger("NodeLog");
 	private static String BS_ip;
@@ -97,10 +97,6 @@ public class structuredPeer {
 			
 			LoadResources(noOfPrevNodes);
 			
-			AddResourcesToNetwork();
-			
-			GetKeysFromSuccessor();
-			
 			System.out.println("you can give commands now");
 			
 			while(true) { 
@@ -108,6 +104,14 @@ public class structuredPeer {
 				String[] S = s.split(" ");
 				switch (S[0]) {
 				//print details
+				case "start1":
+					AddResourcesToNetwork();
+					break;
+					
+				case "start2":
+					GetKeysFromSuccessor();
+					break;
+					
 				case "details":
 					System.out.println("\nMy details:\nIP: "+myIP+" Port: "+myPort+" Key: "+myKey+"\n");
 					break;
@@ -138,6 +142,17 @@ public class structuredPeer {
 					}
 					break;
 				
+				// add a resource to network
+				case "add":
+				{
+					String file = "";
+					for(int i = 1; i<S.length; i++)
+						file += " "+ S[i];
+					file = file.substring(1);
+					AddResourceToNetwork(file);
+				}
+					break;
+					
 				// search for a file
 				case "search":
 					String file = "";
@@ -145,6 +160,7 @@ public class structuredPeer {
 						file += " "+ S[i];
 					file = file.substring(1);
 					int key = hash(file);
+					System.out.println(file+": "+key);
 					search(key);
 					break;
 				
@@ -195,6 +211,7 @@ public class structuredPeer {
 							+ "fingertable:                             Prints finger table.\n"
 							+ "entries:                                 Prints resources in this node.\n"
 							+ "keytable:                                Prints key table.\n"
+							+ "add <file>:                              Adds given file to network\n"
 							+ "answered:                                Gives the queries ansered till now.\n"
 							+ "forwarded:                               Gives the number of queries forwarded till now.\n"
 							+ "received:                                Gives the number of queries received till now.\n"
@@ -226,6 +243,7 @@ public class structuredPeer {
 			String sendMsg = "SER 80 "+ System.currentTimeMillis() +" "+ myIP +" "+ myPort +" "+ fileKey;
 			sendMsg = String.format("%04d", sendMsg.length()) +" "+ sendMsg;
 			int respKey = fingerTable.GetResp(fileKey);
+			System.out.println("resp key: "+respKey);
 			String ip = fingerTable.GetIp(respKey);
 			int port = fingerTable.GetPort(respKey);
 			Send(sendMsg, ip, port);
@@ -257,11 +275,6 @@ public class structuredPeer {
 				int searchKey = hash(resources[searchKeyIndex]);				// Selecting the file name randomly based on priority.
 				System.out.println("Searching for: "+ file);
 				search(searchKey);
-				while (true) {
-					if (isSearchComplete){
-						break;						
-					}
-				}
 			}
 		} catch (NumberFormatException e) {
 			System.err.println("Error in queries: Got non-integer port number.");
@@ -448,7 +461,8 @@ public class structuredPeer {
 		}		
 	}
 	
-	public static void AddResourcesToNetwork(String file) throws NoSuchAlgorithmException, IOException{
+	public static void AddResourceToNetwork(String file) throws NoSuchAlgorithmException, IOException{
+		System.out.println("file: "+file);
 		int fileKey = hash(file);
 		int respKey = fingerTable.GetResp(fileKey);
 		String nodeIp = fingerTable.GetIp(respKey);
@@ -511,6 +525,5 @@ public class structuredPeer {
 			nodeResources.add(resources.get(i));
 			pickedResources.put(hash(resources.get(i)), resources.get(i));
 		}
-		System.out.println(nodeResources);
 	}
 }
